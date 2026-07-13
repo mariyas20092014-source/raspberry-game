@@ -11,7 +11,7 @@
 
         /* Visual Emoji Counter Styles */
         #counter-container { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.4); border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 20px; padding: 8px 15px; display: none; gap: 8px; z-index: 50; box-shadow: 0 4px 10px rgba(0,0,0,0.4); align-items: center; justify-content: center; }
-        .counter-rasp { font-size: 18px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); transition: transform 0.3s ease-out, opacity 0.3s ease-out, width 0.3s ease-out; }
+        .counter-rasp { font-size: 18px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); transition: transform 0.3s ease-out, opacity 0.3s ease-out; }
         .counter-rasp.pop { transform: scale(1.5); opacity: 0; }
 
         /* Jar Styles */
@@ -47,9 +47,20 @@
 
         .modal-content { background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 40px; border-radius: 15px; text-align: center; width: 450px; min-height: 400px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.2); text-shadow: 1px 1px 3px rgba(0,0,0,0.8); }
         
+        #task-question {
+            font-size: 36px;
+            font-weight: bold;
+            margin: 15px 0 25px 0;
+            text-shadow: 2px 2px 5px rgba(0,0,0,0.8);
+        }
+
+        #task-title:empty {
+            display: none;
+        }
+
         .btn-group { display: flex; gap: 15px; justify-content: center; margin-top: 20px; }
         button { background: rgba(76, 175, 80, 0.8); color: white; border: 1px solid rgba(255, 255, 255, 0.3); padding: 12px 24px; font-size: 18px; border-radius: 5px; cursor: pointer; transition: background 0.2s, transform 0.1s; text-shadow: 1px 1px 2px rgba(0,0,0,0.5); flex-grow: 1; }
-        button:hover { background: rgba(69, 160, 73, 1); transform: scale(1.05); }
+        button:hover:not(:disabled) { background: rgba(69, 160, 73, 1); transform: scale(1.05); }
 
         #play-again-btn { padding: 8px 20px; font-size: 15px; flex-grow: 0; width: auto; align-self: center; margin-top: 15px; }
 
@@ -60,7 +71,7 @@
         .task-option.correct { background: rgba(76, 175, 80, 0.8) !important; border-color: #a5d6a7 !important; color: white !important; text-shadow: 1px 1px 2px rgba(0,0,0,0.5) !important; box-shadow: 0 0 10px rgba(76, 175, 80, 0.5); }
         .task-option.wrong { background: rgba(244, 67, 54, 0.8) !important; border-color: #ef9a9a !important; color: white !important; text-shadow: 1px 1px 2px rgba(0,0,0,0.5) !important; box-shadow: 0 0 10px rgba(244, 67, 54, 0.5); }
         #btn-check { background: rgba(0, 123, 255, 0.9); width: 100%; display: block; margin-top: auto; }
-        #btn-check:hover { background: rgba(0, 86, 179, 1); }
+        #btn-check:hover:not(:disabled) { background: rgba(0, 86, 179, 1); }
     </style>
 </head>
 <body>
@@ -91,7 +102,7 @@
 
         <div id="task-window" class="modal-overlay">
             <div class="modal-content">
-                <h2>Test Time!</h2>
+                <h2 id="task-title"></h2>
                 <p id="task-question">Question goes here</p>
                 <div class="task-options" id="task-options"></div>
                 <button id="btn-check" onclick="submitAnswer()">Check Answer</button>
@@ -108,14 +119,12 @@
     </div>
 
     <script>
-        // Sound Setup
         const leafSound = new Audio('sound1.mp3');
         const dropSound = new Audio('sound2.mp3');
         const correctSound = new Audio('sound3.mp3');
         const wrongSound = new Audio('sound4.mp3');
         const winSound = new Audio('sound5.mp3');
 
-        // Helper to instantly replay sounds
         function playSound(audio) {
             audio.currentTime = 0;
             audio.play().catch(e => console.log("Audio play prevented by browser:", e));
@@ -151,7 +160,7 @@
             { image: 'leaf4.png', top: '47.71%', left: '92.81%', size: '170px', rotation: 255, flip: -1, origin: 'center bottom', swingAngle: -90, raspSize: 86, raspRot: -13, raspX: -20, raspY: 0 }
         ];
 
-        const tasks = [
+        let tasks = [
             { q: "frog", options: ["jump", "dance", "run"], answer: "jump" },
             { q: "bird", options: ["dance", "sing", "swim"], answer: "sing" },
             { q: "horse", options: ["sing", "run", "swim"], answer: "run" },
@@ -162,10 +171,10 @@
             { q: "sheep", options: ["run", "sing", "swim"], answer: "run" }
         ];
 
-        // Multiplayer state variables
         let isMultiplayer = false;
         let activeTeam = 1;
         let scores = { 1: 0, 2: 0 };
+        let stealMode = false; 
         
         let currentTaskIndex = 0, currentGhost = null, draggedRaspberry = null, originalSpot = null;
         let currentSelectedOpt = null, currentCorrectAns = null, pendingDropElement = null;
@@ -176,7 +185,6 @@
             isMultiplayer = (mode === 2);
             document.getElementById('start-window').classList.remove('active'); 
             
-            // Setup visual counter
             const counter = document.getElementById('counter-container');
             counter.style.display = 'flex';
             counter.innerHTML = '';
@@ -232,18 +240,17 @@
             if (le.classList.contains('moved')) return; 
             le.classList.add('moved'); 
             
-            playSound(leafSound); // Play sound when leaf opens
+            playSound(leafSound); 
 
             setTimeout(() => { 
                 le.classList.remove('moved'); 
                 
-                playSound(leafSound); // Play sound when leaf closes
+                playSound(leafSound); 
 
                 setTimeout(() => {
                     const raspberry = spotDiv.querySelector('.raspberry');
                     if (raspberry && draggedRaspberry !== raspberry) {
                         relocateRaspberry(raspberry, spotDiv);
-                        if (isMultiplayer) switchTurn();
                     }
                 }, 600);
 
@@ -318,7 +325,7 @@
                 originalSpot.removeChild(draggedRaspberry); 
                 const rect = activeJar.getBoundingClientRect(); 
                 
-                playSound(dropSound); // Play sound when raspberry is dropped into the jar
+                playSound(dropSound); 
 
                 pendingDropElement = renderRaspberryInJar(e.clientX - rect.left, e.clientY - rect.top, activeJar);
                 
@@ -340,9 +347,93 @@
             return h;
         }
 
+        function flyRaspberryToOtherJar(raspEl, fromJar, toJar) {
+            if (!raspEl) return;
+            const rectFrom = raspEl.getBoundingClientRect();
+            
+            raspEl.style.position = 'fixed';
+            raspEl.style.transform = 'none';
+            raspEl.style.transition = 'none';
+            raspEl.style.zIndex = '1000'; 
+            
+            document.body.appendChild(raspEl);
+            void raspEl.offsetWidth;
+            
+            const targetLayoutData = targetLayout[scores[activeTeam]];
+            const rectTo = toJar.getBoundingClientRect();
+            
+            const startX = rectFrom.left;
+            const startY = rectFrom.top;
+            const targetX = rectTo.left + targetLayoutData.x - (raspEl.offsetWidth / 2);
+            const targetY = rectTo.top + targetLayoutData.y - (raspEl.offsetHeight / 2);
+            
+            const distance = Math.abs(targetX - startX);
+            const radius = distance / 2; 
+            
+            let peakY = Math.min(startY, targetY) - radius;
+            
+            if (peakY < window.innerHeight * 0.1) {
+                peakY = window.innerHeight * 0.1;
+            }
+            
+            const controlX = (startX + targetX) / 2;
+            const controlY = 2 * peakY - (startY + targetY) / 2;
+            
+            const duration = 1200; 
+            const startTime = performance.now();
+            
+            function animateFrame(currentTime) {
+                const elapsed = currentTime - startTime;
+                let progress = elapsed / duration;
+                if (progress > 1) progress = 1;
+                
+                const easeT = progress < 0.5 
+                    ? 2 * progress * progress 
+                    : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                
+                const currentX = (1 - easeT) * (1 - easeT) * startX + 2 * (1 - easeT) * easeT * controlX + easeT * easeT * targetX;
+                const currentY = (1 - easeT) * (1 - easeT) * startY + 2 * (1 - easeT) * easeT * controlY + easeT * easeT * targetY;
+                
+                const rotation = easeT * 360;
+                let scale = 1;
+                if (easeT < 0.5) {
+                    scale = 1 + easeT; 
+                } else {
+                    scale = 1.5 - (easeT - 0.5); 
+                }
+                
+                raspEl.style.left = `${currentX}px`;
+                raspEl.style.top = `${currentY}px`;
+                raspEl.style.transform = `scale(${scale}) rotate(${rotation}deg)`;
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animateFrame); 
+                } else {
+                    if (raspEl.parentNode === document.body) { 
+                        raspEl.style.transition = 'left 0.4s ease-in-out, top 0.4s ease-in-out, transform 0.4s ease-in-out'; 
+                        raspEl.style.position = 'absolute';
+                        toJar.appendChild(raspEl);
+                        raspEl.style.left = `${targetLayoutData.x}px`;
+                        raspEl.style.top = `${targetLayoutData.y}px`;
+                        raspEl.style.transform = `translate(-50%, -50%) rotate(${targetLayoutData.rot}deg)`;
+                    }
+                }
+            }
+            
+            requestAnimationFrame(animateFrame); 
+        }
+
         function showTaskWindow() {
             const win = document.getElementById('task-window'), opts = document.getElementById('task-options');
             opts.innerHTML = ""; 
+            
+            document.getElementById('task-title').innerHTML = ""; 
+            stealMode = false;
+
+            const btnCheck = document.getElementById('btn-check');
+            btnCheck.disabled = false;
+            btnCheck.style.opacity = '1';
+            btnCheck.style.cursor = 'pointer';
             
             const task = tasks[currentTaskIndex % tasks.length]; 
             currentCorrectAns = task.answer;
@@ -358,15 +449,19 @@
 
         function submitAnswer() {
             if (!currentSelectedOpt) return;
+
+            const btnCheck = document.getElementById('btn-check');
+            btnCheck.disabled = true;
+            btnCheck.style.opacity = '0.5';
+            btnCheck.style.cursor = 'default';
+
             const sel = document.querySelector('.task-option.selected');
-            
             document.querySelectorAll('.task-option').forEach(el => el.onclick = null);
 
             if (currentSelectedOpt === currentCorrectAns) {
                 sel.classList.add('correct');
-                playSound(correctSound); // Play sound for correct answer
+                playSound(correctSound); 
                 
-                // Remove one emoji from the visual counter
                 const activeEmoji = document.querySelector('.counter-rasp:not(.pop)');
                 if (activeEmoji) {
                     activeEmoji.classList.add('pop');
@@ -382,27 +477,72 @@
                     if (scores[1] + scores[2] === TOTAL_RASPBERRIES) { 
                         setTimeout(showEndScreen, 500); 
                     } else {
-                        if (isMultiplayer) switchTurn(); 
+                        if (isMultiplayer) {
+                            if (!stealMode) {
+                                switchTurn(); 
+                            }
+                        }
                     }
                     
+                    stealMode = false;
                     resetTurnVariables();
                 }, 800);
+
             } else { 
                 sel.classList.add('wrong'); 
-                playSound(wrongSound); // Play sound for wrong answer
+                playSound(wrongSound); 
 
                 setTimeout(() => {
-                    document.getElementById('task-window').classList.remove('active');
-                    
-                    if (pendingDropElement && pendingDropElement.parentNode) {
-                        pendingDropElement.parentNode.removeChild(pendingDropElement);
+                    if (isMultiplayer && !stealMode) {
+                        stealMode = true;
+                        
+                        const oldJar = document.getElementById('jar-' + activeTeam);
+                        switchTurn(); 
+                        const newJar = document.getElementById('jar-' + activeTeam);
+                        
+                        flyRaspberryToOtherJar(pendingDropElement, oldJar, newJar);
+
+                        // Removed the steal text update here completely
+                        
+                        const opts = document.getElementById('task-options');
+                        opts.innerHTML = "";
+                        tasks[currentTaskIndex % tasks.length].options.forEach(o => {
+                            const d = document.createElement('div'); d.className = 'task-option'; d.innerText = o;
+                            d.onclick = () => { document.querySelectorAll('.task-option').forEach(el => el.classList.remove('selected')); d.classList.add('selected'); currentSelectedOpt = o; };
+                            opts.appendChild(d);
+                        });
+                        
+                        currentSelectedOpt = null;
+                        
+                        btnCheck.disabled = true;
+                        btnCheck.style.opacity = '0.5';
+                        btnCheck.style.cursor = 'default';
+                        
+                        setTimeout(() => {
+                            btnCheck.disabled = false;
+                            btnCheck.style.opacity = '1';
+                            btnCheck.style.cursor = 'pointer';
+                        }, 1200);
+                        
+                    } else {
+                        document.getElementById('task-window').classList.remove('active');
+                        
+                        if (pendingDropElement && pendingDropElement.parentNode) {
+                            pendingDropElement.parentNode.removeChild(pendingDropElement);
+                        }
+                        
+                        relocateRaspberry(draggedRaspberry, null); 
+                        
+                        tasks.push(tasks[currentTaskIndex % tasks.length]);
+                        currentTaskIndex++; 
+                        
+                        if (isMultiplayer && stealMode) {
+                            switchTurn(); 
+                        }
+                        
+                        stealMode = false;
+                        resetTurnVariables();
                     }
-                    
-                    relocateRaspberry(draggedRaspberry, null); 
-                    
-                    if (isMultiplayer) switchTurn();
-                    currentTaskIndex++; 
-                    resetTurnVariables();
                 }, 800); 
             }
         }
@@ -414,7 +554,7 @@
         }
 
         function showEndScreen() {
-            playSound(winSound); // Play sound at the end of the game
+            playSound(winSound); 
 
             if (isMultiplayer) {
                 const title = document.getElementById('end-title');
@@ -426,7 +566,9 @@
                 } else {
                     title.innerText = "It's a Tie! 🍓";
                 }
-                desc.innerText = `Team 1 harvested ${scores[1]} | Team 2 harvested ${scores[2]}`;
+                desc.innerText = `Team 1: ${scores[1]} | Team 2: ${scores[2]}`;
+            } else {
+                document.getElementById('end-desc').innerText = `You harvested all ${scores[1]} raspberries!`;
             }
             document.getElementById('counter-container').style.display = 'none';
             document.getElementById('end-window').classList.add('active');
