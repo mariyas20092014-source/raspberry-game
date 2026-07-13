@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raspberry Placement Builder</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: white;
+            overflow: hidden; 
+        }
+
+        /* --- CANVAS --- */
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-image: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url('background.png');
+            background-size: cover;
+            background-position: center;
+            background-color: #2c5e1a;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        /* --- TOOLBAR --- */
+        #toolbar {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 950px;
+            background: rgba(40, 40, 40, 0.95);
+            backdrop-filter: blur(5px);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            font-size: 14px;
+        }
+
+        input[type="range"] {
+            padding: 5px;
+            border-radius: 4px;
+            background: #222;
+        }
+
+        button {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 15px;
+            transition: background 0.2s;
+        }
+
+        button:hover { background: #45a049; }
+        button:disabled { background: #666; cursor: not-allowed; }
+
+        /* Mode Toggle Buttons */
+        #btn-mode {
+            background: #9c27b0;
+            font-size: 16px;
+            border: 2px solid white;
+        }
+        #btn-mode:hover { background: #7b1fa2; }
+
+        .btn-toggle { background: #ff9800; margin-top: 15px; }
+        .btn-toggle:hover { background: #e68a00; }
+        
+        .export-btn { background: #007bff; margin-left: auto; }
+        .export-btn:hover { background: #0056b3; }
+
+        /* --- LAYERS --- */
+        .spot {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
+
+        /* Raspberry Layer */
+        .raspberry-edit {
+            position: absolute;
+            top: calc(50% + var(--raspY));
+            left: calc(50% + var(--raspX));
+            width: var(--raspSize);
+            height: var(--raspSize);
+            background-image: url('raspberry.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            transform: translate(-50%, -50%) rotate(var(--raspRot));
+            cursor: pointer;
+            z-index: 15;
+            transition: filter 0.2s, transform 0.1s;
+        }
+
+        .raspberry-edit.selected {
+            filter: drop-shadow(0 0 15px #ff5555) brightness(1.2);
+        }
+
+        /* Leaf Layers */
+        .leaf-base {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform-origin: center center;
+            z-index: 20;
+            pointer-events: none; 
+        }
+
+        .leaf-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            transform-origin: var(--origin);
+            transition: transform 0.4s ease-in-out;
+            /* EDIT MODE DEFAULT: Ignore mouse clicks so we can grab the raspberries */
+            pointer-events: none;
+            opacity: 0.85; 
+        }
+
+        .leaf-image.moved {
+            transform: rotate(var(--swing)) !important;
+            opacity: 0.2; 
+        }
+
+        /* --- TEST MODE OVERRIDES --- */
+        /* When in test mode, the leaves block clicks until they swing away */
+        body.test-mode .leaf-image {
+            pointer-events: auto;
+            opacity: 1;
+        }
+        
+        body.test-mode .leaf-image.moved {
+            opacity: 1; /* Keep fully visible when swinging in test mode */
+        }
+
+        /* --- EXPORT WINDOW --- */
+        #export-area {
+            position: absolute;
+            top: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 800px;
+            background: rgba(30, 30, 30, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            z-index: 100;
+            display: none;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            width: 100%;
+            height: 250px;
+            background: #2d2d2d;
+            color: #00ff00;
+            border: 1px solid #555;
+            padding: 10px;
+            font-family: monospace;
+            box-sizing: border-box;
+            white-space: pre;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas"></div>
+
+    <div id="toolbar">
+        <button id="btn-mode" onclick="toggleMode()">Current Mode: EDIT ✏️ (Click to Test)</button>
+        <button class="btn-toggle" id="btn-lift" onclick="toggleAllLeaves()">Lift All Leaves</button>
+
+        <div class="control-group">
+            <label>Size: <span id="val-size">60px</span></label>
+            <input type="range" id="slide-size" min="20" max="150" value="60" disabled oninput="updateRaspberry()">
+        </div>
+
+        <div class="control-group">
+            <label>Rotation: <span id="val-rot">0°</span></label>
+            <input type="range" id="slide-rot" min="-180" max="180" value="0" disabled oninput="updateRaspberry()">
+        </div>
+
+        <div class="control-group">
+            <label>Nudge X: <span id="val-x">0px</span></label>
+            <input type="range" id="slide-x" min="-100" max="100" value="0" disabled oninput="updateRaspberry()">
+        </div>
+
+        <div class="control-group">
+            <label>Nudge Y: <span id="val-y">0px</span></label>
+            <input type="range" id="slide-y" min="-100" max="100" value="0" disabled oninput="updateRaspberry()">
+        </div>
+
+        <button class="export-btn" onclick="exportConfig()">Export Final Code</button>
+    </div>
+
+    <div id="export-area">
+        <p>Copy this final array and replace the one in your main game file:</p>
+        <textarea id="export-code" readonly></textarea>
+        <button onclick="document.getElementById('export-area').style.display='none'" style="background:#dc3545; margin-top:10px;">Close Window</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        let leavesLifted = false;
+        let isTestMode = false;
+        
+        let leafPositions = [
+            { image: 'leaf1.png', top: '73.99%', left: '72.81%', size: '270px', rotation: -30, flip: -1, origin: 'center bottom', swingAngle: -90 },
+            { image: 'leaf1.png', top: '38.04%', left: '36.63%', size: '190px', rotation: 60, flip: 1, origin: 'center bottom', swingAngle: -90 },
+            { image: 'leaf1.png', top: '56.99%', left: '19.50%', size: '240px', rotation: 30, flip: 1, origin: 'center bottom', swingAngle: 90 },
+            { image: 'leaf2.png', top: '30.98%', left: '80.31%', size: '210px', rotation: 0, flip: -1, origin: 'left center', swingAngle: -90 },
+            { image: 'leaf2.png', top: '8.24%', left: '62.56%', size: '190px', rotation: 0, flip: -1, origin: 'center top', swingAngle: 90 },
+            { image: 'leaf2.png', top: '27.45%', left: '21.75%', size: '210px', rotation: 0, flip: 1, origin: 'left center', swingAngle: -90 },
+            { image: 'leaf3.png', top: '89.93%', left: '18.31%', size: '250px', rotation: 60, flip: 1, origin: 'center bottom', swingAngle: -90 },
+            { image: 'leaf3.png', top: '83.27%', left: '43.75%', size: '230px', rotation: 75, flip: 1, origin: 'center bottom', swingAngle: -90 },
+            { image: 'leaf3.png', top: '16.08%', left: '94.31%', size: '230px', rotation: -150, flip: 1, origin: 'center bottom', swingAngle: -90 },
+            { image: 'leaf4.png', top: '61.05%', left: '5.44%', size: '160px', rotation: 0, flip: -1, origin: 'center bottom', swingAngle: -90 },
+            { image: 'leaf4.png', top: '10.85%', left: '6.69%', size: '150px', rotation: 135, flip: 1, origin: 'center bottom', swingAngle: -90 },
+            { image: 'leaf4.png', top: '47.71%', left: '92.81%', size: '170px', rotation: 255, flip: -1, origin: 'center bottom', swingAngle: -90 }
+        ];
+
+        let selectedIndex = null;
+
+        function initBuilder() {
+            leafPositions.forEach((pos, index) => {
+                if (!pos.raspSize) pos.raspSize = 60;
+                if (!pos.raspRot) pos.raspRot = 0;
+                if (!pos.raspX) pos.raspX = 0;
+                if (!pos.raspY) pos.raspY = 0;
+
+                const spotDiv = document.createElement('div');
+                spotDiv.className = 'spot';
+                spotDiv.style.top = pos.top;
+                spotDiv.style.left = pos.left;
+                spotDiv.style.width = pos.size;
+                spotDiv.style.height = pos.size;
+
+                // The Raspberry
+                const raspElement = document.createElement('div');
+                raspElement.className = 'raspberry-edit';
+                raspElement.id = 'rasp-' + index;
+                
+                raspElement.style.setProperty('--raspSize', `${pos.raspSize}px`);
+                raspElement.style.setProperty('--raspRot', `${pos.raspRot}deg`);
+                raspElement.style.setProperty('--raspX', `${pos.raspX}px`);
+                raspElement.style.setProperty('--raspY', `${pos.raspY}px`);
+
+                raspElement.onclick = (e) => {
+                    e.stopPropagation();
+                    if (isTestMode) {
+                        // VISUAL FEEDBACK FOR GRABBING IN TEST MODE
+                        raspElement.style.filter = "brightness(2) drop-shadow(0 0 10px white)";
+                        setTimeout(() => { raspElement.style.filter = ""; }, 300);
+                        return;
+                    }
+                    selectRaspberry(index);
+                };
+
+                // The Leaves
+                const leafBase = document.createElement('div');
+                leafBase.className = 'leaf-base';
+                leafBase.style.transform = `rotate(${pos.rotation}deg) scaleX(${pos.flip})`;
+
+                const leafImage = document.createElement('div');
+                leafImage.className = 'leaf-image';
+                leafImage.id = 'leaf-' + index;
+                leafImage.style.backgroundImage = `url('${pos.image}')`;
+                leafImage.style.setProperty('--origin', pos.origin);
+                leafImage.style.setProperty('--swing', `${pos.swingAngle}deg`);
+                
+                // Clicking the leaf ONLY works in Test Mode
+                leafImage.onclick = (e) => {
+                    if (!isTestMode) return;
+                    e.stopPropagation();
+                    
+                    if (leafImage.classList.contains('moved')) return;
+                    
+                    leafImage.classList.add('moved');
+                    setTimeout(() => {
+                        leafImage.classList.remove('moved');
+                    }, 2000); // 2 second window, just like the game!
+                };
+                
+                leafBase.appendChild(leafImage);
+                spotDiv.appendChild(raspElement);
+                spotDiv.appendChild(leafBase);
+                canvas.appendChild(spotDiv);
+            });
+        }
+
+        function toggleMode() {
+            isTestMode = !isTestMode;
+            const modeBtn = document.getElementById('btn-mode');
+            const liftBtn = document.getElementById('btn-lift');
+            
+            if (isTestMode) {
+                // Switch to Playtest Mode
+                modeBtn.innerText = "Current Mode: TEST PLAY 🎮 (Click to Edit)";
+                modeBtn.style.background = "#e91e63";
+                document.body.classList.add('test-mode');
+                
+                // Disable editing tools
+                liftBtn.disabled = true;
+                if (leavesLifted) toggleAllLeaves(); // Drop leaves if they were up
+                
+                if (selectedIndex !== null) {
+                    document.getElementById('rasp-' + selectedIndex).classList.remove('selected');
+                    selectedIndex = null;
+                    document.getElementById('slide-size').disabled = true;
+                    document.getElementById('slide-rot').disabled = true;
+                    document.getElementById('slide-x').disabled = true;
+                    document.getElementById('slide-y').disabled = true;
+                }
+            } else {
+                // Switch back to Edit Mode
+                modeBtn.innerText = "Current Mode: EDIT ✏️ (Click to Test)";
+                modeBtn.style.background = "#9c27b0";
+                document.body.classList.remove('test-mode');
+                liftBtn.disabled = false;
+            }
+        }
+
+        function toggleAllLeaves() {
+            if (isTestMode) return;
+            leavesLifted = !leavesLifted;
+            leafPositions.forEach((_, index) => {
+                const leaf = document.getElementById('leaf-' + index);
+                if (leavesLifted) {
+                    leaf.classList.add('moved');
+                } else {
+                    leaf.classList.remove('moved');
+                }
+            });
+        }
+
+        function selectRaspberry(index) {
+            if (selectedIndex !== null) {
+                document.getElementById('rasp-' + selectedIndex).classList.remove('selected');
+            }
+            
+            selectedIndex = index;
+            const pos = leafPositions[index];
+            const raspElement = document.getElementById('rasp-' + index);
+            
+            raspElement.classList.add('selected');
+
+            document.getElementById('slide-size').disabled = false;
+            document.getElementById('slide-rot').disabled = false;
+            document.getElementById('slide-x').disabled = false;
+            document.getElementById('slide-y').disabled = false;
+
+            document.getElementById('slide-size').value = pos.raspSize;
+            document.getElementById('slide-rot').value = pos.raspRot;
+            document.getElementById('slide-x').value = pos.raspX;
+            document.getElementById('slide-y').value = pos.raspY;
+
+            document.getElementById('val-size').innerText = pos.raspSize + 'px';
+            document.getElementById('val-rot').innerText = pos.raspRot + '°';
+            document.getElementById('val-x').innerText = pos.raspX + 'px';
+            document.getElementById('val-y').innerText = pos.raspY + 'px';
+        }
+
+        function updateRaspberry() {
+            if (selectedIndex === null) return;
+
+            const size = parseInt(document.getElementById('slide-size').value);
+            const rot = parseInt(document.getElementById('slide-rot').value);
+            const x = parseInt(document.getElementById('slide-x').value);
+            const y = parseInt(document.getElementById('slide-y').value);
+
+            leafPositions[selectedIndex].raspSize = size;
+            leafPositions[selectedIndex].raspRot = rot;
+            leafPositions[selectedIndex].raspX = x;
+            leafPositions[selectedIndex].raspY = y;
+
+            document.getElementById('val-size').innerText = size + 'px';
+            document.getElementById('val-rot').innerText = rot + '°';
+            document.getElementById('val-x').innerText = x + 'px';
+            document.getElementById('val-y').innerText = y + 'px';
+
+            const raspElement = document.getElementById('rasp-' + selectedIndex);
+            raspElement.style.setProperty('--raspSize', `${size}px`);
+            raspElement.style.setProperty('--raspRot', `${rot}deg`);
+            raspElement.style.setProperty('--raspX', `${x}px`);
+            raspElement.style.setProperty('--raspY', `${y}px`);
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.target === canvas && selectedIndex !== null) {
+                document.getElementById('rasp-' + selectedIndex).classList.remove('selected');
+                selectedIndex = null;
+                document.getElementById('slide-size').disabled = true;
+                document.getElementById('slide-rot').disabled = true;
+                document.getElementById('slide-x').disabled = true;
+                document.getElementById('slide-y').disabled = true;
+            }
+        });
+
+        function exportConfig() {
+            const exportArea = document.getElementById('export-area');
+            const exportCode = document.getElementById('export-code');
+            
+            exportCode.value = "const leafPositions = [\n" + 
+                leafPositions.map(cfg => 
+                    `    { image: '${cfg.image}', top: '${cfg.top}', left: '${cfg.left}', size: '${cfg.size}', rotation: ${cfg.rotation}, flip: ${cfg.flip}, origin: '${cfg.origin}', swingAngle: ${cfg.swingAngle}, raspSize: ${cfg.raspSize}, raspRot: ${cfg.raspRot}, raspX: ${cfg.raspX}, raspY: ${cfg.raspY} }`
+                ).join(",\n") + 
+                "\n];";
+            
+            exportArea.style.display = 'block';
+        }
+
+        initBuilder();
+    </script>
+</body>
+</html>

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raspberry Harvest Game</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; background-color: #2c5e1a; }
+
+        #game-container { position: relative; width: 100vw; height: 100vh; background-image: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url('background.png'); background-size: cover; background-position: center; }
+
+        /* Visual Emoji Counter Styles */
+        #counter-container { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.4); border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 20px; padding: 8px 15px; display: none; gap: 8px; z-index: 50; box-shadow: 0 4px 10px rgba(0,0,0,0.4); align-items: center; justify-content: center; }
+        .counter-rasp { font-size: 18px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); transition: transform 0.3s ease-out, opacity 0.3s ease-out, width 0.3s ease-out; }
+        .counter-rasp.pop { transform: scale(1.5); opacity: 0; }
+
+        /* Jar Styles */
+        .jar-container { position: absolute; bottom: 20px; width: 150px; height: 200px; background-color: rgba(255, 255, 255, 0.2); border: 4px solid rgba(255, 255, 255, 0.6); border-radius: 10px 10px 40px 40px; overflow: hidden; z-index: 50; transition: box-shadow 0.3s, background-color 0.3s, border-color 0.3s; }
+        #jar-1 { right: 20px; }
+        #jar-2 { left: 20px; }
+
+        .jar-container.glowing { box-shadow: 0 0 30px rgba(255, 235, 59, 1); border-color: rgba(255, 235, 59, 1); background-color: rgba(255, 255, 255, 0.35); }
+        .jar-container.drag-over { background-color: rgba(255, 255, 255, 0.6) !important; box-shadow: 0 0 20px rgba(255, 255, 255, 0.9) !important; }
+
+        .jar-label { text-align: center; color: white; font-weight: bold; font-size: 20px; padding-top: 15px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); opacity: 0.9; }
+        .hidden { display: none !important; }
+
+        .jar-raspberry { position: absolute; background-image: url('raspberry.png'); background-size: contain; background-repeat: no-repeat; background-position: center; filter: drop-shadow(0 4px 4px rgba(0,0,0,0.3)); transition: left 0.4s ease-in-out, top 0.4s ease-in-out, transform 0.4s ease-in-out; }
+
+        .spot { position: absolute; transform: translate(-50%, -50%); }
+
+        .raspberry { position: absolute; top: calc(50% + var(--raspY)); left: calc(50% + var(--raspX)); width: var(--raspSize); height: var(--raspSize); background-image: url('raspberry.png'); background-size: contain; background-repeat: no-repeat; background-position: center; transform: translate(-50%, -50%) rotate(var(--raspRot)); cursor: grab; z-index: 10; transition: filter 0.2s, opacity 0.2s; touch-action: none; }
+        .raspberry:hover { filter: brightness(1.2) drop-shadow(0 0 5px yellow); }
+        .raspberry:active { cursor: grabbing; }
+
+        .dragging-ghost { position: fixed; pointer-events: none; z-index: 1000; background-image: url('raspberry.png'); background-size: contain; background-repeat: no-repeat; background-position: center; transform: translate(-50%, -50%); filter: drop-shadow(0 10px 10px rgba(0,0,0,0.5)); }
+
+        .leaf-base { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: center center; z-index: 20; pointer-events: none; }
+        
+        .leaf-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: contain; background-repeat: no-repeat; background-position: center; cursor: pointer; transform-origin: var(--origin); transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s; pointer-events: auto; }
+        .leaf-image.moved { transform: rotate(var(--swing)); }
+
+        .modal-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.3); display: flex; justify-content: center; align-items: center; z-index: 100; visibility: hidden; opacity: 0; transition: opacity 0.3s; }
+        .modal-overlay.active { visibility: visible; opacity: 1; }
+
+        #start-window { background-image: url('background1.png'); background-size: cover; background-position: center; background-color: #2c5e1a; }
+
+        .modal-content { background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 40px; border-radius: 15px; text-align: center; width: 450px; min-height: 400px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.2); text-shadow: 1px 1px 3px rgba(0,0,0,0.8); }
+        
+        .btn-group { display: flex; gap: 15px; justify-content: center; margin-top: 20px; }
+        button { background: rgba(76, 175, 80, 0.8); color: white; border: 1px solid rgba(255, 255, 255, 0.3); padding: 12px 24px; font-size: 18px; border-radius: 5px; cursor: pointer; transition: background 0.2s, transform 0.1s; text-shadow: 1px 1px 2px rgba(0,0,0,0.5); flex-grow: 1; }
+        button:hover { background: rgba(69, 160, 73, 1); transform: scale(1.05); }
+
+        #play-again-btn { padding: 8px 20px; font-size: 15px; flex-grow: 0; width: auto; align-self: center; margin-top: 15px; }
+
+        .task-options { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; flex-grow: 1; margin-bottom: 20px; }
+        .task-option { background: rgba(255, 255, 255, 0.15); border: 2px solid rgba(255, 255, 255, 0.3); padding: 12px; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 18px; }
+        .task-option:hover { background: rgba(255, 255, 255, 0.25); }
+        .task-option.selected { background: rgba(255, 235, 59, 0.8); border-color: #FBC02D; color: #333; text-shadow: none; box-shadow: 0 0 10px rgba(255, 235, 59, 0.5); }
+        .task-option.correct { background: rgba(76, 175, 80, 0.8) !important; border-color: #a5d6a7 !important; color: white !important; text-shadow: 1px 1px 2px rgba(0,0,0,0.5) !important; box-shadow: 0 0 10px rgba(76, 175, 80, 0.5); }
+        .task-option.wrong { background: rgba(244, 67, 54, 0.8) !important; border-color: #ef9a9a !important; color: white !important; text-shadow: 1px 1px 2px rgba(0,0,0,0.5) !important; box-shadow: 0 0 10px rgba(244, 67, 54, 0.5); }
+        #btn-check { background: rgba(0, 123, 255, 0.9); width: 100%; display: block; margin-top: auto; }
+        #btn-check:hover { background: rgba(0, 86, 179, 1); }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        
+        <div id="counter-container"></div>
+
+        <div id="jar-1" class="jar-container">
+            <div class="jar-label" id="label-1">Team 1</div>
+        </div>
+        <div id="jar-2" class="jar-container hidden">
+            <div class="jar-label" id="label-2">Team 2</div>
+        </div>
+
+        <div id="play-area"></div>
+        
+        <div id="start-window" class="modal-overlay active">
+            <div class="modal-content">
+                <h2>Welcome to the Harvest!</h2>
+                <p>Click on a leaf to move it away. If you spot a raspberry, drag it to your active glowing jar before it closes!</p>
+                <div class="btn-group">
+                    <button onclick="startGame(1)">1 Player</button>
+                    <button onclick="startGame(2)">2 Players</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="task-window" class="modal-overlay">
+            <div class="modal-content">
+                <h2>Test Time!</h2>
+                <p id="task-question">Question goes here</p>
+                <div class="task-options" id="task-options"></div>
+                <button id="btn-check" onclick="submitAnswer()">Check Answer</button>
+            </div>
+        </div>
+
+        <div id="end-window" class="modal-overlay">
+            <div class="modal-content">
+                <h2 id="end-title">Well Done! 🍓</h2>
+                <p id="end-desc">You harvested all the raspberries!</p>
+                <button id="play-again-btn" onclick="location.reload()">Play Again</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sound Setup
+        const leafSound = new Audio('sound1.mp3');
+        const dropSound = new Audio('sound2.mp3');
+        const correctSound = new Audio('sound3.mp3');
+        const wrongSound = new Audio('sound4.mp3');
+        const winSound = new Audio('sound5.mp3');
+
+        // Helper to instantly replay sounds
+        function playSound(audio) {
+            audio.currentTime = 0;
+            audio.play().catch(e => console.log("Audio play prevented by browser:", e));
+        }
+
+        const TOTAL_LEAVES = 12;
+        const TOTAL_RASPBERRIES = 8;
+        const LEAF_OPEN_TIME_MS = 1000; 
+        
+        const targetLayout = [
+            { "x": 45, "y": 167, "rot": -30, "size": 79 },
+            { "x": 110, "y": 167, "rot": 30, "size": 84 },
+            { "x": 121, "y": 120, "rot": 45, "size": 81 },
+            { "x": 79, "y": 131, "rot": 180, "size": 83 },
+            { "x": 32, "y": 119, "rot": 0, "size": 76 },
+            { "x": 34, "y": 67, "rot": -30, "size": 73 },
+            { "x": 80, "y": 72, "rot": -60, "size": 64 },
+            { "x": 131, "y": 69, "rot": -30, "size": 72 }
+        ];
+
+        const leafPositions = [
+            { image: 'leaf1.png', top: '73.99%', left: '72.81%', size: '270px', rotation: -30, flip: -1, origin: 'center bottom', swingAngle: -90, raspSize: 84, raspRot: 16, raspX: -80, raspY: -29 },
+            { image: 'leaf1.png', top: '38.04%', left: '36.63%', size: '190px', rotation: 60, flip: 1, origin: 'center bottom', swingAngle: -90, raspSize: 64, raspRot: -26, raspX: 26, raspY: 0 },
+            { image: 'leaf1.png', top: '56.99%', left: '19.50%', size: '240px', rotation: 30, flip: 1, origin: 'center bottom', swingAngle: 90, raspSize: 76, raspRot: 0, raspX: 74, raspY: -26 },
+            { image: 'leaf2.png', top: '30.98%', left: '80.31%', size: '210px', rotation: 0, flip: -1, origin: 'left center', swingAngle: -90, raspSize: 79, raspRot: 19, raspX: -55, raspY: 8 },
+            { image: 'leaf2.png', top: '8.24%', left: '62.56%', size: '190px', rotation: 0, flip: -1, origin: 'center top', swingAngle: 90, raspSize: 60, raspRot: 0, raspX: 0, raspY: 0 },
+            { image: 'leaf2.png', top: '27.45%', left: '21.75%', size: '210px', rotation: 0, flip: 1, origin: 'left center', swingAngle: -90, raspSize: 72, raspRot: 0, raspX: 46, raspY: 0 },
+            { image: 'leaf3.png', top: '89.93%', left: '18.31%', size: '250px', rotation: 60, flip: 1, origin: 'center bottom', swingAngle: -90, raspSize: 88, raspRot: -16, raspX: 85, raspY: 17 },
+            { image: 'leaf3.png', top: '83.27%', left: '43.75%', size: '230px', rotation: 75, flip: 1, origin: 'center bottom', swingAngle: -90, raspSize: 81, raspRot: -16, raspX: 71, raspY: 29 },
+            { image: 'leaf3.png', top: '16.08%', left: '94.31%', size: '230px', rotation: -150, flip: 1, origin: 'center bottom', swingAngle: -90, raspSize: 83, raspRot: 0, raspX: -76, raspY: 19 },
+            { image: 'leaf4.png', top: '61.05%', left: '5.44%', size: '160px', rotation: 0, flip: -1, origin: 'center bottom', swingAngle: -90, raspSize: 78, raspRot: 0, raspX: -9, raspY: -22 },
+            { image: 'leaf4.png', top: '10.85%', left: '6.69%', size: '150px', rotation: 135, flip: 1, origin: 'center bottom', swingAngle: -90, raspSize: 73, raspRot: -32, raspX: 0, raspY: 24 },
+            { image: 'leaf4.png', top: '47.71%', left: '92.81%', size: '170px', rotation: 255, flip: -1, origin: 'center bottom', swingAngle: -90, raspSize: 86, raspRot: -13, raspX: -20, raspY: 0 }
+        ];
+
+        const tasks = [
+            { q: "frog", options: ["jump", "dance", "run"], answer: "jump" },
+            { q: "bird", options: ["dance", "sing", "swim"], answer: "sing" },
+            { q: "horse", options: ["sing", "run", "swim"], answer: "run" },
+            { q: "chimp", options: ["sing", "dance", "swim"], answer: "dance" },
+            { q: "kangaroo", options: ["swim", "jump", "run"], answer: "jump" },
+            { q: "fish", options: ["sing", "run", "swim"], answer: "swim" },
+            { q: "rabbit", options: ["jump", "swim", "run"], answer: "jump" },
+            { q: "sheep", options: ["run", "sing", "swim"], answer: "run" }
+        ];
+
+        // Multiplayer state variables
+        let isMultiplayer = false;
+        let activeTeam = 1;
+        let scores = { 1: 0, 2: 0 };
+        
+        let currentTaskIndex = 0, currentGhost = null, draggedRaspberry = null, originalSpot = null;
+        let currentSelectedOpt = null, currentCorrectAns = null, pendingDropElement = null;
+
+        function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+        function startGame(mode) { 
+            isMultiplayer = (mode === 2);
+            document.getElementById('start-window').classList.remove('active'); 
+            
+            // Setup visual counter
+            const counter = document.getElementById('counter-container');
+            counter.style.display = 'flex';
+            counter.innerHTML = '';
+            for (let i = 0; i < TOTAL_RASPBERRIES; i++) {
+                const rasp = document.createElement('span');
+                rasp.className = 'counter-rasp';
+                rasp.innerText = '🍓';
+                counter.appendChild(rasp);
+            }
+            
+            if (isMultiplayer) {
+                document.getElementById('jar-2').classList.remove('hidden');
+            } else {
+                document.getElementById('label-1').style.display = 'none';
+            }
+            
+            document.getElementById('jar-1').classList.add('glowing');
+            initializeBoard(); 
+        }
+
+        function switchTurn() {
+            if (!isMultiplayer) return;
+            activeTeam = activeTeam === 1 ? 2 : 1;
+            document.getElementById('jar-1').classList.toggle('glowing', activeTeam === 1);
+            document.getElementById('jar-2').classList.toggle('glowing', activeTeam === 2);
+        }
+
+        function initializeBoard() {
+            const playArea = document.getElementById('play-area'); playArea.innerHTML = '';
+            let indices = shuffle(Array.from({length: TOTAL_LEAVES}, (_, i) => i)).slice(0, TOTAL_RASPBERRIES);
+            
+            leafPositions.forEach((pos, index) => {
+                const spotDiv = document.createElement('div');
+                spotDiv.className = 'spot'; spotDiv.style.top = pos.top; spotDiv.style.left = pos.left; spotDiv.style.width = pos.size; spotDiv.style.height = pos.size;
+                spotDiv.dataset.index = index; 
+
+                if (indices.includes(index)) {
+                    const r = document.createElement('div');
+                    r.className = 'raspberry';
+                    r.style.setProperty('--raspSize', `${pos.raspSize}px`); r.style.setProperty('--raspRot', `${pos.raspRot}deg`); r.style.setProperty('--raspX', `${pos.raspX}px`); r.style.setProperty('--raspY', `${pos.raspY}px`);
+                    r.onpointerdown = (e) => startDrag(e, r, spotDiv, pos); spotDiv.appendChild(r);
+                }
+                const leafBase = document.createElement('div'); leafBase.className = 'leaf-base'; leafBase.style.transform = `rotate(${pos.rotation}deg) scaleX(${pos.flip})`;
+                const leafImage = document.createElement('div'); leafImage.className = 'leaf-image'; leafImage.style.backgroundImage = `url('${pos.image}')`; leafImage.style.setProperty('--origin', pos.origin); leafImage.style.setProperty('--swing', `${pos.swingAngle}deg`);
+                
+                leafImage.onclick = () => moveLeaf(leafImage, spotDiv); 
+                
+                leafBase.appendChild(leafImage); spotDiv.appendChild(leafBase); playArea.appendChild(spotDiv);
+            });
+        }
+
+        function moveLeaf(le, spotDiv) { 
+            if (le.classList.contains('moved')) return; 
+            le.classList.add('moved'); 
+            
+            playSound(leafSound); // Play sound when leaf opens
+
+            setTimeout(() => { 
+                le.classList.remove('moved'); 
+                
+                playSound(leafSound); // Play sound when leaf closes
+
+                setTimeout(() => {
+                    const raspberry = spotDiv.querySelector('.raspberry');
+                    if (raspberry && draggedRaspberry !== raspberry) {
+                        relocateRaspberry(raspberry, spotDiv);
+                        if (isMultiplayer) switchTurn();
+                    }
+                }, 600);
+
+            }, LEAF_OPEN_TIME_MS); 
+        }
+
+        function relocateRaspberry(raspberry, oldSpot) {
+            const allSpots = Array.from(document.querySelectorAll('.spot'));
+            const emptySpots = allSpots.filter(spot => !spot.querySelector('.raspberry'));
+
+            if (emptySpots.length > 0) {
+                const newSpot = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+                const newIndex = parseInt(newSpot.dataset.index);
+                const pos = leafPositions[newIndex];
+
+                if (oldSpot && oldSpot.contains(raspberry)) {
+                    oldSpot.removeChild(raspberry);
+                }
+                
+                raspberry.style.opacity = '1';
+                newSpot.appendChild(raspberry);
+
+                raspberry.style.setProperty('--raspSize', `${pos.raspSize}px`);
+                raspberry.style.setProperty('--raspRot', `${pos.raspRot}deg`);
+                raspberry.style.setProperty('--raspX', `${pos.raspX}px`);
+                raspberry.style.setProperty('--raspY', `${pos.raspY}px`);
+
+                raspberry.onpointerdown = (e) => startDrag(e, raspberry, newSpot, pos);
+            }
+        }
+
+        function startDrag(e, r, s, p) { 
+            e.preventDefault(); 
+            draggedRaspberry = r; 
+            originalSpot = s; 
+            r.style.opacity = '0'; 
+            currentGhost = document.createElement('div'); 
+            currentGhost.className = 'dragging-ghost'; 
+            currentGhost.style.width = `${p.raspSize}px`; 
+            currentGhost.style.height = `${p.raspSize}px`; 
+            document.body.appendChild(currentGhost); 
+            updateGhostPosition(e); 
+            document.addEventListener('pointermove', updateGhostPosition); 
+            document.addEventListener('pointerup', endDrag); 
+        }
+
+        function updateGhostPosition(e) { 
+            if (!currentGhost) return; 
+            currentGhost.style.left = `${e.clientX}px`; 
+            currentGhost.style.top = `${e.clientY}px`; 
+            const el = document.elementFromPoint(e.clientX, e.clientY); 
+            
+            const activeJar = isMultiplayer ? document.getElementById('jar-' + activeTeam) : document.getElementById('jar-1');
+            
+            document.querySelectorAll('.jar-container').forEach(j => j.classList.remove('drag-over'));
+            if (activeJar && (activeJar.contains(el) || el === activeJar)) {
+                activeJar.classList.add('drag-over');
+            }
+        }
+
+        function endDrag(e) { 
+            document.removeEventListener('pointermove', updateGhostPosition); 
+            document.removeEventListener('pointerup', endDrag); 
+            if (!currentGhost) return; 
+            document.body.removeChild(currentGhost); 
+            const el = document.elementFromPoint(e.clientX, e.clientY); 
+            
+            const activeJar = isMultiplayer ? document.getElementById('jar-' + activeTeam) : document.getElementById('jar-1');
+            activeJar.classList.remove('drag-over'); 
+            
+            if (activeJar && (activeJar.contains(el) || el === activeJar)) { 
+                originalSpot.removeChild(draggedRaspberry); 
+                const rect = activeJar.getBoundingClientRect(); 
+                
+                playSound(dropSound); // Play sound when raspberry is dropped into the jar
+
+                pendingDropElement = renderRaspberryInJar(e.clientX - rect.left, e.clientY - rect.top, activeJar);
+                
+                setTimeout(showTaskWindow, 400); 
+            } else { 
+                draggedRaspberry.style.opacity = '1'; 
+                draggedRaspberry = null; 
+            } 
+            currentGhost = null; 
+        }
+
+        function renderRaspberryInJar(dx, dy, jar) {
+            const h = document.createElement('div'); h.className = 'jar-raspberry';
+            const l = targetLayout[scores[activeTeam]];
+            h.style.width = `${l.size}px`; h.style.height = `${l.size}px`; h.style.left = `${dx}px`; h.style.top = `${dy}px`; h.style.transform = `translate(-50%, -50%) rotate(0deg)`;
+            jar.appendChild(h);
+            void h.offsetWidth; 
+            h.style.left = `${l.x}px`; h.style.top = `${l.y}px`; h.style.transform = `translate(-50%, -50%) rotate(${l.rot}deg)`;
+            return h;
+        }
+
+        function showTaskWindow() {
+            const win = document.getElementById('task-window'), opts = document.getElementById('task-options');
+            opts.innerHTML = ""; 
+            
+            const task = tasks[currentTaskIndex % tasks.length]; 
+            currentCorrectAns = task.answer;
+            document.getElementById('task-question').innerText = task.q;
+            
+            task.options.forEach(o => {
+                const d = document.createElement('div'); d.className = 'task-option'; d.innerText = o;
+                d.onclick = () => { document.querySelectorAll('.task-option').forEach(el => el.classList.remove('selected')); d.classList.add('selected'); currentSelectedOpt = o; };
+                opts.appendChild(d);
+            });
+            win.classList.add('active');
+        }
+
+        function submitAnswer() {
+            if (!currentSelectedOpt) return;
+            const sel = document.querySelector('.task-option.selected');
+            
+            document.querySelectorAll('.task-option').forEach(el => el.onclick = null);
+
+            if (currentSelectedOpt === currentCorrectAns) {
+                sel.classList.add('correct');
+                playSound(correctSound); // Play sound for correct answer
+                
+                // Remove one emoji from the visual counter
+                const activeEmoji = document.querySelector('.counter-rasp:not(.pop)');
+                if (activeEmoji) {
+                    activeEmoji.classList.add('pop');
+                    setTimeout(() => activeEmoji.remove(), 300);
+                }
+
+                setTimeout(() => {
+                    document.getElementById('task-window').classList.remove('active');
+                    
+                    scores[activeTeam]++;
+                    currentTaskIndex++;
+                    
+                    if (scores[1] + scores[2] === TOTAL_RASPBERRIES) { 
+                        setTimeout(showEndScreen, 500); 
+                    } else {
+                        if (isMultiplayer) switchTurn(); 
+                    }
+                    
+                    resetTurnVariables();
+                }, 800);
+            } else { 
+                sel.classList.add('wrong'); 
+                playSound(wrongSound); // Play sound for wrong answer
+
+                setTimeout(() => {
+                    document.getElementById('task-window').classList.remove('active');
+                    
+                    if (pendingDropElement && pendingDropElement.parentNode) {
+                        pendingDropElement.parentNode.removeChild(pendingDropElement);
+                    }
+                    
+                    relocateRaspberry(draggedRaspberry, null); 
+                    
+                    if (isMultiplayer) switchTurn();
+                    currentTaskIndex++; 
+                    resetTurnVariables();
+                }, 800); 
+            }
+        }
+
+        function resetTurnVariables() {
+            pendingDropElement = null;
+            draggedRaspberry = null;
+            currentSelectedOpt = null;
+        }
+
+        function showEndScreen() {
+            playSound(winSound); // Play sound at the end of the game
+
+            if (isMultiplayer) {
+                const title = document.getElementById('end-title');
+                const desc = document.getElementById('end-desc');
+                if (scores[1] > scores[2]) {
+                    title.innerText = "Team 1 Wins! 🍓";
+                } else if (scores[2] > scores[1]) {
+                    title.innerText = "Team 2 Wins! 🍓";
+                } else {
+                    title.innerText = "It's a Tie! 🍓";
+                }
+                desc.innerText = `Team 1 harvested ${scores[1]} | Team 2 harvested ${scores[2]}`;
+            }
+            document.getElementById('counter-container').style.display = 'none';
+            document.getElementById('end-window').classList.add('active');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raspberry Builder Tool</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            background-color: #2c5e1a;
+        }
+
+        /* --- GAME AREA --- */
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background-image: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url('background.png');
+            background-size: cover;
+            background-position: center;
+        }
+
+        /* --- BUILDER TOOLBAR --- */
+        #builder-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 350px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #4CAF50;
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #4CAF50;
+            z-index: 9999;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        /* Drag Handle */
+        #builder-panel h2 {
+            margin-top: 0;
+            font-size: 20px;
+            color: #fff;
+            cursor: grab;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #4CAF50;
+            user-select: none; /* Prevents text highlighting while dragging */
+        }
+        
+        #builder-panel h2:active {
+            cursor: grabbing;
+        }
+
+        #builder-panel p {
+            font-size: 14px;
+            color: #ccc;
+            margin-bottom: 15px;
+            margin-top: 15px;
+        }
+
+        button.export-btn {
+            background: #4CAF50;
+            color: #111;
+            border: none;
+            padding: 10px 15px;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        button.export-btn:hover { background: #45a049; }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            background: #111;
+            color: #a5d6a7;
+            border: 1px solid #333;
+            border-radius: 5px;
+            padding: 10px;
+            box-sizing: border-box;
+            font-family: monospace;
+            resize: none;
+        }
+
+        /* --- JAR --- */
+        #jar-container {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 150px;
+            height: 200px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border: 4px solid rgba(255, 255, 255, 0.6);
+            border-radius: 10px 10px 40px 40px;
+            overflow: hidden;
+            z-index: 50;
+        }
+
+        #jar-container.drag-over {
+            background-color: rgba(255, 255, 255, 0.4);
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
+        }
+
+        .jar-raspberry {
+            position: absolute;
+            background-image: url('raspberry.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            filter: drop-shadow(0 4px 4px rgba(0,0,0,0.3));
+            cursor: grab;
+        }
+
+        /* --- LEAVES AND RASPBERRIES --- */
+        .spot {
+            position: absolute;
+            transform: translate(-50%, -50%);
+        }
+
+        .raspberry {
+            position: absolute;
+            top: calc(50% + var(--raspY));
+            left: calc(50% + var(--raspX));
+            width: var(--raspSize);
+            height: var(--raspSize);
+            background-image: url('raspberry.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            transform: translate(-50%, -50%) rotate(var(--raspRot));
+            cursor: grab;
+            z-index: 10;
+        }
+
+        .dragging-ghost {
+            position: fixed;
+            pointer-events: none;
+            z-index: 1000;
+            background-image: url('raspberry.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            filter: drop-shadow(0 10px 10px rgba(0,0,0,0.5));
+        }
+
+        .leaf-base {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            transform-origin: center center;
+            z-index: 20;
+            pointer-events: none;
+            opacity: 0.3; 
+        }
+
+        .leaf-image {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-size: contain; background-repeat: no-repeat; background-position: center;
+            transform-origin: var(--origin);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        
+        <div id="builder-panel">
+            <h2 id="drag-handle">🛠️ Level Builder</h2>
+            <p>1. Drag raspberries to the jar.<br>2. <b>Scroll mouse wheel</b> while dragging to rotate.<br>3. Click export to get your exact layout code.</p>
+            <button class="export-btn" onclick="exportLayout()">Export Layout Data</button>
+            <textarea id="output-code" readonly placeholder="Your JSON data will appear here..."></textarea>
+        </div>
+
+        <div id="jar-container"></div>
+        <div id="play-area"></div>
+    </div>
+
+    <script>
+        // --- PANEL DRAG LOGIC ---
+        const builderPanel = document.getElementById('builder-panel');
+        const dragHandle = document.getElementById('drag-handle');
+        
+        let isDraggingPanel = false;
+        let panelOffsetX = 0;
+        let panelOffsetY = 0;
+
+        dragHandle.addEventListener('mousedown', (e) => {
+            isDraggingPanel = true;
+            // Calculate where the mouse is relative to the top-left of the panel
+            const rect = builderPanel.getBoundingClientRect();
+            panelOffsetX = e.clientX - rect.left;
+            panelOffsetY = e.clientY - rect.top;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDraggingPanel) return;
+            
+            // Move panel based on mouse position minus the initial offset
+            let newLeft = e.clientX - panelOffsetX;
+            let newTop = e.clientY - panelOffsetY;
+
+            // Optional: Keep it within the screen bounds
+            newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - builderPanel.offsetWidth));
+            newTop = Math.max(0, Math.min(newTop, window.innerHeight - builderPanel.offsetHeight));
+
+            builderPanel.style.left = `${newLeft}px`;
+            builderPanel.style.top = `${newTop}px`;
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDraggingPanel = false;
+        });
+
+        // --- GAME LOGIC ---
+        const leafPositions = [
+            { image: 'leaf1.png', top: '73.99%', left: '72.81%', size: '270px', rotation: -30, flip: -1, origin: 'center bottom', swingAngle: -90, raspSize: 84, raspRot: 16, raspX: -80, raspY: -29 },
+            { image: 'leaf1.png', top: '38.04%', left: '36.63%', size: '190px', rotation: 60, flip: 1, origin: 'center bottom', swingAngle: -90, raspSize: 64, raspRot: -26, raspX: 26, raspY: 0 },
+            { image: 'leaf1.png', top: '56.99%', left: '19.50%', size: '240px', rotation: 30, flip: 1, origin: 'center bottom', swingAngle: 90, raspSize: 76, raspRot: 0, raspX: 74, raspY: -26 },
+            { image: 'leaf2.png', top: '30.98%', left: '80.31%', size: '210px', rotation: 0, flip: -1, origin: 'left center', swingAngle: -90, raspSize: 79, raspRot: 19, raspX: -55, raspY: 8 },
+            { image: 'leaf2.png', top: '8.24%', left: '62.56%', size: '190px', rotation: 0, flip: -1, origin: 'center top', swingAngle: 90, raspSize: 60, raspRot: 0, raspX: 0, raspY: 0 },
+            { image: 'leaf2.png', top: '27.45%', left: '21.75%', size: '210px', rotation: 0, flip: 1, origin: 'left center', swingAngle: -90, raspSize: 72, raspRot: 0, raspX: 46, raspY: 0 },
+            { image: 'leaf3.png', top: '89.93%', left: '18.31%', size: '250px', rotation: 60, flip: 1, origin: 'center bottom', swingAngle: -90, raspSize: 88, raspRot: -16, raspX: 85, raspY: 17 },
+            { image: 'leaf3.png', top: '83.27%', left: '43.75%', size: '230px', rotation: 75, flip: 1, origin: 'center bottom', swingAngle: -90, raspSize: 81, raspRot: -16, raspX: 71, raspY: 29 },
+            { image: 'leaf3.png', top: '16.08%', left: '94.31%', size: '230px', rotation: -150, flip: 1, origin: 'center bottom', swingAngle: -90, raspSize: 83, raspRot: 0, raspX: -76, raspY: 19 },
+            { image: 'leaf4.png', top: '61.05%', left: '5.44%', size: '160px', rotation: 0, flip: -1, origin: 'center bottom', swingAngle: -90, raspSize: 78, raspRot: 0, raspX: -9, raspY: -22 },
+            { image: 'leaf4.png', top: '10.85%', left: '6.69%', size: '150px', rotation: 135, flip: 1, origin: 'center bottom', swingAngle: -90, raspSize: 73, raspRot: -32, raspX: 0, raspY: 24 },
+            { image: 'leaf4.png', top: '47.71%', left: '92.81%', size: '170px', rotation: 255, flip: -1, origin: 'center bottom', swingAngle: -90, raspSize: 86, raspRot: -13, raspX: -20, raspY: 0 }
+        ];
+
+        let currentGhost = null;
+        let draggedElement = null; 
+        let draggedData = null;
+        let currentRotation = 0;
+        
+        const jarElement = document.getElementById('jar-container');
+
+        // Initialize Builder Canvas
+        function initBuilder() {
+            const playArea = document.getElementById('play-area');
+            let spots = Array(8).fill(true).concat(Array(4).fill(false)).sort(() => Math.random() - 0.5);
+
+            leafPositions.forEach((pos, index) => {
+                const spotDiv = document.createElement('div');
+                spotDiv.className = 'spot';
+                spotDiv.style.top = pos.top; spotDiv.style.left = pos.left;
+                spotDiv.style.width = pos.size; spotDiv.style.height = pos.size;
+
+                if (spots[index]) {
+                    const r = document.createElement('div');
+                    r.className = 'raspberry';
+                    r.style.setProperty('--raspSize', `${pos.raspSize}px`);
+                    r.style.setProperty('--raspRot', `${pos.raspRot}deg`);
+                    r.style.setProperty('--raspX', `${pos.raspX}px`);
+                    r.style.setProperty('--raspY', `${pos.raspY}px`);
+                    
+                    r.onmousedown = (e) => startDrag(e, r, spotDiv, pos.raspSize);
+                    spotDiv.appendChild(r);
+                }
+
+                const leafBase = document.createElement('div');
+                leafBase.className = 'leaf-base';
+                leafBase.style.transform = `rotate(${pos.rotation}deg) scaleX(${pos.flip})`;
+
+                const leafImage = document.createElement('div');
+                leafImage.className = 'leaf-image';
+                leafImage.style.backgroundImage = `url('${pos.image}')`;
+                
+                leafBase.appendChild(leafImage);
+                spotDiv.appendChild(leafBase);
+                playArea.appendChild(spotDiv);
+            });
+        }
+
+        // --- RASPBERRY DRAG, DROP, AND ROTATE LOGIC ---
+        function startDrag(e, element, originalParent, size, initialRot = 0) {
+            e.preventDefault(); 
+            draggedElement = element;
+            draggedData = { size: size, parent: originalParent };
+            currentRotation = initialRot;
+
+            element.style.display = 'none'; 
+
+            currentGhost = document.createElement('div');
+            currentGhost.className = 'dragging-ghost';
+            currentGhost.style.width = `${size}px`;
+            currentGhost.style.height = `${size}px`;
+            currentGhost.style.transform = `translate(-50%, -50%) rotate(${currentRotation}deg)`;
+            
+            updateGhostPosition(e);
+            document.body.appendChild(currentGhost);
+
+            document.addEventListener('mousemove', updateGhostPosition);
+            document.addEventListener('mouseup', endDrag);
+            window.addEventListener('wheel', handleScrollRotate, {passive: false});
+        }
+
+        function updateGhostPosition(e) {
+            if (!currentGhost) return;
+            currentGhost.style.left = `${e.clientX}px`;
+            currentGhost.style.top = `${e.clientY}px`;
+
+            currentGhost.style.display = 'none'; 
+            const elementBelow = document.elementFromPoint(e.clientX, e.clientY);
+            currentGhost.style.display = 'block';
+
+            if (jarElement.contains(elementBelow) || elementBelow === jarElement) {
+                jarElement.classList.add('drag-over');
+            } else {
+                jarElement.classList.remove('drag-over');
+            }
+        }
+
+        function handleScrollRotate(e) {
+            e.preventDefault();
+            if (!currentGhost) return;
+            currentRotation += (e.deltaY > 0) ? 15 : -15; 
+            currentGhost.style.transform = `translate(-50%, -50%) rotate(${currentRotation}deg)`;
+        }
+
+        function endDrag(e) {
+            // Prevent interference if dragging the panel
+            if(isDraggingPanel) return;
+
+            document.removeEventListener('mousemove', updateGhostPosition);
+            document.removeEventListener('mouseup', endDrag);
+            window.removeEventListener('wheel', handleScrollRotate);
+
+            if (!currentGhost) return;
+
+            currentGhost.style.display = 'none';
+            const elementBelow = document.elementFromPoint(e.clientX, e.clientY);
+            jarElement.classList.remove('drag-over');
+
+            if (jarElement.contains(elementBelow) || elementBelow === jarElement) {
+                if(draggedData.parent && draggedData.parent.contains(draggedElement)) {
+                    draggedData.parent.removeChild(draggedElement);
+                }
+                
+                const jarRect = jarElement.getBoundingClientRect();
+                const dropX = e.clientX - jarRect.left;
+                const dropY = e.clientY - jarRect.top;
+
+                placeInJar(dropX, dropY, draggedData.size, currentRotation);
+            } else {
+                draggedElement.style.display = 'block';
+            }
+
+            document.body.removeChild(currentGhost);
+            currentGhost = null; draggedElement = null; draggedData = null;
+        }
+
+        function placeInJar(x, y, size, rotation) {
+            const r = document.createElement('div');
+            r.className = 'jar-raspberry';
+            r.style.width = `${size}px`;
+            r.style.height = `${size}px`;
+            r.style.left = `${x}px`;
+            r.style.top = `${y}px`;
+            
+            r.dataset.x = x.toFixed(1);
+            r.dataset.y = y.toFixed(1);
+            r.dataset.rot = rotation;
+            r.dataset.size = size;
+
+            r.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+
+            r.onmousedown = (e) => startDrag(e, r, jarElement, size, rotation);
+
+            jarElement.appendChild(r);
+        }
+
+        // --- EXPORT LOGIC ---
+        function exportLayout() {
+            const items = document.querySelectorAll('.jar-raspberry');
+            const layoutData = [];
+
+            items.forEach(item => {
+                layoutData.push({
+                    x: parseFloat(item.dataset.x),
+                    y: parseFloat(item.dataset.y),
+                    rot: parseInt(item.dataset.rot),
+                    size: parseFloat(item.dataset.size)
+                });
+            });
+
+            const output = document.getElementById('output-code');
+            if(layoutData.length === 0) {
+                output.value = "// Your jar is empty!\n// Drag some raspberries in first.";
+                return;
+            }
+
+            const jsonString = JSON.stringify(layoutData, null, 4);
+            output.value = `const targetLayout = ${jsonString};`;
+        }
+
+        // Start
+        initBuilder();
+    </script>
+</body>
+</html>

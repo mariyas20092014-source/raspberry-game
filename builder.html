@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaf Level Builder Tool</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #2c5e1a; /* Matched to main file */
+            color: white;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden; /* Prevents scrollbars */
+        }
+
+        /* --- TOOLBAR (Now floating on top) --- */
+        #toolbar {
+            position: absolute; /* Floating so it doesn't shrink the canvas */
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(51, 51, 51, 0.95); /* Slightly transparent */
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-sizing: border-box;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        button {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        button:hover { background: #45a049; }
+        button:disabled { background: #555; color: #888; cursor: not-allowed; }
+
+        .export-btn { background: #007bff; }
+        .export-btn:hover { background: #0056b3; }
+
+        .divider {
+            width: 2px;
+            height: 24px;
+            background: #555;
+            margin: 0 5px;
+        }
+
+        /* --- CANVAS (Now exactly 100vw by 100vh) --- */
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            /* EXACT match to the main game background */
+            background-image: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url('background.png');
+            background-size: cover;
+            background-position: center;
+            background-color: #2c5e1a; /* Fallback */
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        /* --- LEAVES --- */
+        .leaf {
+            position: absolute;
+            cursor: grab;
+            user-select: none;
+            /* Added this to match the spot centering offset from the main game */
+            transform-origin: center;
+            transform: translate(-50%, -50%); /* Mirrors main game positioning perfectly */
+            background-color: rgba(255, 255, 255, 0.2); /* For missing images */
+            border: 2px dashed transparent;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 12px;
+            text-shadow: 1px 1px 2px black;
+        }
+
+        .leaf img {
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let the div handle the drag */
+        }
+
+        .leaf:active { cursor: grabbing; }
+
+        .leaf.selected {
+            border-color: #ffea00;
+            box-shadow: 0 0 15px rgba(255, 234, 0, 0.5);
+            z-index: 100;
+        }
+
+        /* --- EXPORT WINDOW --- */
+        #export-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            backdrop-filter: blur(5px);
+        }
+
+        .export-content {
+            background: #222;
+            padding: 30px;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 800px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+
+        .export-content h3 { margin-top: 0; }
+
+        textarea {
+            width: 100%;
+            height: 300px;
+            background: #111;
+            color: #00ff00;
+            border: 1px solid #444;
+            padding: 15px;
+            font-family: monospace;
+            box-sizing: border-box;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            resize: none;
+        }
+
+        .close-btn { background: #dc3545; }
+        .close-btn:hover { background: #c82333; }
+
+    </style>
+</head>
+<body>
+
+    <div id="toolbar">
+        <div class="controls">
+            <strong>🍃 Builder</strong>
+            <div class="divider"></div>
+            <button id="btn-rot-left" disabled onclick="rotateSelected(-15)">↺ Rotate Left</button>
+            <button id="btn-rot-right" disabled onclick="rotateSelected(15)">↻ Rotate Right</button>
+            <button id="btn-flip" disabled onclick="flipSelected()">↔ Flip Horizontal</button>
+            <div class="divider"></div>
+            <button id="btn-size-down" disabled onclick="resizeSelected(-10)">➖ Smaller</button>
+            <button id="btn-size-up" disabled onclick="resizeSelected(10)">➕ Larger</button>
+        </div>
+        <button class="export-btn" onclick="exportLayout()">Export Configuration</button>
+    </div>
+
+    <div id="canvas">
+        </div>
+
+    <div id="export-overlay">
+        <div class="export-content">
+            <h3>Configuration Export</h3>
+            <p>Copy this array and update the `positions` variable in your main game's JavaScript:</p>
+            <textarea id="export-code" readonly></textarea>
+            <button class="close-btn" onclick="closeExport()">Close</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const leafImages = ['leaf1.png', 'leaf2.png', 'leaf3.png', 'leaf4.png'];
+        const leavesCountPerType = 3;
+        
+        let selectedLeaf = null;
+        let isDragging = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+
+        function initBuilder() {
+            let idCounter = 0;
+            leafImages.forEach((imgSrc) => {
+                for (let i = 0; i < leavesCountPerType; i++) {
+                    createLeaf(imgSrc, idCounter);
+                    idCounter++;
+                }
+            });
+        }
+
+        function createLeaf(imgSrc, index) {
+            const leafDiv = document.createElement('div');
+            leafDiv.className = 'leaf';
+            leafDiv.id = 'leaf-' + index;
+            
+            // Custom attributes to track properties
+            leafDiv.dataset.rotation = 0;
+            leafDiv.dataset.flip = 1;
+            leafDiv.dataset.image = imgSrc;
+
+            // Set default size
+            leafDiv.style.width = '80px';
+            leafDiv.style.height = '80px';
+
+            // Scatter placement below the toolbar to start
+            leafDiv.style.left = (100 + (index * 60) % (window.innerWidth - 200)) + 'px';
+            leafDiv.style.top = (150 + (index * 40) % (window.innerHeight - 250)) + 'px';
+
+            const img = document.createElement('img');
+            img.src = imgSrc;
+            img.alt = imgSrc; 
+            
+            leafDiv.appendChild(img);
+            canvas.appendChild(leafDiv);
+
+            leafDiv.addEventListener('mousedown', startDrag);
+        }
+
+        // --- DRAG & DROP LOGIC ---
+        function startDrag(e) {
+            selectLeaf(e.target.closest('.leaf')); // Ensure we select the div, not the img
+            isDragging = true;
+            
+            const rect = selectedLeaf.getBoundingClientRect();
+            // Adjust offsets slightly due to translate(-50%, -50%)
+            dragOffsetX = e.clientX - (rect.left + rect.width / 2);
+            dragOffsetY = e.clientY - (rect.top + rect.height / 2);
+        }
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging || !selectedLeaf) return;
+
+            const canvasRect = canvas.getBoundingClientRect();
+            
+            let newX = e.clientX - canvasRect.left - dragOffsetX;
+            let newY = e.clientY - canvasRect.top - dragOffsetY;
+
+            selectedLeaf.style.left = newX + 'px';
+            selectedLeaf.style.top = newY + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        // --- SELECTION LOGIC ---
+        function selectLeaf(leafElement) {
+            if (selectedLeaf) selectedLeaf.classList.remove('selected');
+            
+            selectedLeaf = leafElement;
+            selectedLeaf.classList.add('selected');
+
+            // Enable all toolbar buttons
+            document.querySelectorAll('#toolbar button:not(.export-btn)').forEach(btn => btn.disabled = false);
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.target === canvas && selectedLeaf) {
+                selectedLeaf.classList.remove('selected');
+                selectedLeaf = null;
+                document.querySelectorAll('#toolbar button:not(.export-btn)').forEach(btn => btn.disabled = true);
+            }
+        });
+
+        // --- TRANSFORMATION & SIZE CONTROLS ---
+        function rotateSelected(degrees) {
+            if (!selectedLeaf) return;
+            let currentRot = parseInt(selectedLeaf.dataset.rotation);
+            currentRot = (currentRot + degrees) % 360;
+            selectedLeaf.dataset.rotation = currentRot;
+            applyTransform(selectedLeaf);
+        }
+
+        function flipSelected() {
+            if (!selectedLeaf) return;
+            let currentFlip = parseInt(selectedLeaf.dataset.flip);
+            selectedLeaf.dataset.flip = currentFlip * -1;
+            applyTransform(selectedLeaf);
+        }
+
+        function applyTransform(leaf) {
+            const rot = leaf.dataset.rotation;
+            const flip = leaf.dataset.flip;
+            // Includes the centering translation to match main game
+            leaf.style.transform = `translate(-50%, -50%) rotate(${rot}deg) scaleX(${flip})`;
+        }
+
+        function resizeSelected(pxChange) {
+            if (!selectedLeaf) return;
+            let currentSize = parseInt(selectedLeaf.style.width);
+            let newSize = Math.max(30, currentSize + pxChange); // Set minimum size to 30px
+            
+            selectedLeaf.style.width = newSize + 'px';
+            selectedLeaf.style.height = newSize + 'px';
+        }
+
+        // --- EXPORT LOGIC ---
+        function exportLayout() {
+            const allLeaves = document.querySelectorAll('.leaf');
+            const canvasRect = canvas.getBoundingClientRect();
+            const configArray = [];
+
+            allLeaves.forEach(leaf => {
+                const leftPx = parseFloat(leaf.style.left);
+                const topPx = parseFloat(leaf.style.top);
+                const sizePx = parseInt(leaf.style.width);
+                
+                // Convert to percentages so it adapts to different screen sizes in the main game
+                const leftPercent = ((leftPx / canvasRect.width) * 100).toFixed(2);
+                const topPercent = ((topPx / canvasRect.height) * 100).toFixed(2);
+
+                configArray.push({
+                    image: leaf.dataset.image,
+                    top: `${topPercent}%`,
+                    left: `${leftPercent}%`,
+                    size: `${sizePx}px`,
+                    rotation: parseInt(leaf.dataset.rotation),
+                    flip: parseInt(leaf.dataset.flip)
+                });
+            });
+
+            const exportOverlay = document.getElementById('export-overlay');
+            const exportCode = document.getElementById('export-code');
+            
+            exportCode.value = "const leafPositions = [\n" + 
+                configArray.map(cfg => `    { image: '${cfg.image}', top: '${cfg.top}', left: '${cfg.left}', size: '${cfg.size}', rotation: ${cfg.rotation}, flip: ${cfg.flip} }`).join(",\n") + 
+                "\n];";
+            
+            exportOverlay.style.display = 'flex';
+        }
+
+        function closeExport() {
+            document.getElementById('export-overlay').style.display = 'none';
+        }
+
+        // Run the builder
+        initBuilder();
+
+    </script>
+</body>
+</html>

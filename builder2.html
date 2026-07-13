@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaf Animation Builder</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: white;
+            overflow: hidden; 
+        }
+
+        /* --- CANVAS --- */
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-image: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url('background.png');
+            background-size: cover;
+            background-position: center;
+            background-color: #2c5e1a;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        /* --- TOOLBAR --- */
+        #toolbar {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 850px;
+            background: rgba(40, 40, 40, 0.95);
+            backdrop-filter: blur(5px);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            font-size: 14px;
+        }
+
+        select, input[type="range"] {
+            padding: 5px;
+            border-radius: 4px;
+            background: #222;
+            color: white;
+            border: 1px solid #555;
+        }
+
+        button {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 15px;
+        }
+
+        button:hover { background: #45a049; }
+        button:disabled { background: #666; cursor: not-allowed; }
+
+        .export-btn { background: #007bff; margin-left: auto; }
+        .export-btn:hover { background: #0056b3; }
+
+        /* --- LEAVES (TWO-LAYER SYSTEM) --- */
+        .spot {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
+
+        .leaf-base {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform-origin: center center;
+            z-index: 20;
+        }
+
+        .leaf-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            cursor: pointer;
+            transform-origin: var(--origin);
+            transition: transform 0.5s ease-in-out, filter 0.2s;
+        }
+
+        .leaf-image.selected {
+            filter: drop-shadow(0 0 15px yellow) brightness(1.2);
+        }
+
+        .leaf-image.moved {
+            transform: rotate(var(--swing)) !important;
+        }
+
+        .raspberry-hint {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 30px;
+            z-index: 5;
+            opacity: 0.5;
+        }
+
+        /* --- EXPORT WINDOW --- */
+        #export-area {
+            position: absolute;
+            top: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 800px;
+            background: rgba(30, 30, 30, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            z-index: 100;
+            display: none;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            width: 100%;
+            height: 250px;
+            background: #2d2d2d;
+            color: #00ff00;
+            border: 1px solid #555;
+            padding: 10px;
+            font-family: monospace;
+            box-sizing: border-box;
+            white-space: pre;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas"></div>
+
+    <div id="toolbar">
+        <div class="control-group">
+            <label>Fixed Side (Hinge):</label>
+            <select id="sel-origin" disabled onchange="updateLeaf()">
+                <option value="center center">Center (Spin)</option>
+                <option value="left center">Left Edge</option>
+                <option value="right center">Right Edge</option>
+                <option value="center top">Top Edge</option>
+                <option value="center bottom">Bottom Edge</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>Swing Direction:</label>
+            <select id="sel-dir" disabled onchange="updateLeaf()">
+                <option value="1">Clockwise ↻</option>
+                <option value="-1">Counter-Clockwise ↺</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>Swing Amount: <span id="angle-val">90°</span></label>
+            <input type="range" id="slide-amount" min="10" max="180" value="90" disabled oninput="updateLeaf()">
+        </div>
+
+        <button id="btn-test" disabled onclick="testAnimation()">Test</button>
+        <button class="export-btn" onclick="exportConfig()">Export Final Code</button>
+    </div>
+
+    <div id="export-area">
+        <p>Copy this final array and replace the one in your main game file:</p>
+        <textarea id="export-code" readonly></textarea>
+        <button onclick="document.getElementById('export-area').style.display='none'" style="background:#dc3545; margin-top:10px;">Close Window</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        
+        // YOUR EXACT ARRAY WITH DEFAULT HINGES
+        let leafPositions = [
+            { image: 'leaf1.png', top: '73.99%', left: '72.81%', size: '270px', rotation: -30, flip: -1, origin: 'right center', swingAngle: 90 },
+            { image: 'leaf1.png', top: '38.04%', left: '36.63%', size: '190px', rotation: 60, flip: 1, origin: 'left center', swingAngle: -90 },
+            { image: 'leaf1.png', top: '56.99%', left: '19.50%', size: '240px', rotation: 30, flip: 1, origin: 'left center', swingAngle: 90 },
+            { image: 'leaf2.png', top: '30.98%', left: '80.31%', size: '210px', rotation: 0, flip: -1, origin: 'right center', swingAngle: 90 },
+            { image: 'leaf2.png', top: '8.24%', left: '62.56%', size: '190px', rotation: 0, flip: -1, origin: 'center top', swingAngle: -90 },
+            { image: 'leaf2.png', top: '27.45%', left: '21.75%', size: '210px', rotation: 0, flip: 1, origin: 'left center', swingAngle: 90 },
+            { image: 'leaf3.png', top: '89.93%', left: '18.31%', size: '250px', rotation: 60, flip: 1, origin: 'center bottom', swingAngle: 90 },
+            { image: 'leaf3.png', top: '83.27%', left: '43.75%', size: '230px', rotation: 75, flip: 1, origin: 'left center', swingAngle: -90 },
+            { image: 'leaf3.png', top: '16.08%', left: '94.31%', size: '230px', rotation: -150, flip: 1, origin: 'right center', swingAngle: -90 },
+            { image: 'leaf4.png', top: '61.05%', left: '5.44%', size: '160px', rotation: 0, flip: -1, origin: 'left center', swingAngle: 90 },
+            { image: 'leaf4.png', top: '10.85%', left: '6.69%', size: '150px', rotation: 135, flip: 1, origin: 'center top', swingAngle: 90 },
+            { image: 'leaf4.png', top: '47.71%', left: '92.81%', size: '170px', rotation: 255, flip: -1, origin: 'right center', swingAngle: 90 }
+        ];
+
+        let selectedIndex = null;
+
+        function initBuilder() {
+            leafPositions.forEach((pos, index) => {
+                if (!pos.origin) pos.origin = 'left center';
+                if (typeof pos.swingAngle === 'undefined') pos.swingAngle = 90;
+
+                const spotDiv = document.createElement('div');
+                spotDiv.className = 'spot';
+                spotDiv.style.top = pos.top;
+                spotDiv.style.left = pos.left;
+                spotDiv.style.width = pos.size;
+                spotDiv.style.height = pos.size;
+
+                const hint = document.createElement('div');
+                hint.className = 'raspberry-hint';
+                hint.innerText = '🍓';
+                spotDiv.appendChild(hint);
+
+                // Layer 1: The Base 
+                const leafBase = document.createElement('div');
+                leafBase.className = 'leaf-base';
+                leafBase.style.transform = `rotate(${pos.rotation}deg) scaleX(${pos.flip})`;
+
+                // Layer 2: The Image 
+                const leafImage = document.createElement('div');
+                leafImage.className = 'leaf-image';
+                leafImage.id = 'leaf-' + index;
+                leafImage.style.backgroundImage = `url('${pos.image}')`;
+                leafImage.style.setProperty('--origin', pos.origin);
+                leafImage.style.setProperty('--swing', `${pos.swingAngle}deg`);
+                
+                leafImage.onclick = (e) => {
+                    e.stopPropagation();
+                    selectLeaf(index);
+                };
+                
+                leafBase.appendChild(leafImage);
+                spotDiv.appendChild(leafBase);
+                canvas.appendChild(spotDiv);
+            });
+        }
+
+        function selectLeaf(index) {
+            if (selectedIndex !== null) {
+                document.getElementById('leaf-' + selectedIndex).classList.remove('selected');
+            }
+            
+            selectedIndex = index;
+            const leafData = leafPositions[index];
+            const leafElement = document.getElementById('leaf-' + index);
+            
+            leafElement.classList.add('selected');
+
+            // Enable controls
+            document.getElementById('sel-origin').disabled = false;
+            document.getElementById('sel-dir').disabled = false;
+            document.getElementById('slide-amount').disabled = false;
+            document.getElementById('btn-test').disabled = false;
+
+            // Translate the single swingAngle into direction and amount
+            const angle = leafData.swingAngle;
+            const dir = angle < 0 ? -1 : 1;
+            const amt = Math.abs(angle);
+
+            document.getElementById('sel-origin').value = leafData.origin;
+            document.getElementById('sel-dir').value = dir;
+            document.getElementById('slide-amount').value = amt;
+            document.getElementById('angle-val').innerText = amt + '°';
+        }
+
+        function updateLeaf() {
+            if (selectedIndex === null) return;
+
+            const newOrigin = document.getElementById('sel-origin').value;
+            const dir = parseInt(document.getElementById('sel-dir').value);
+            const amt = parseInt(document.getElementById('slide-amount').value);
+            
+            const newAngle = dir * amt;
+
+            // Update array
+            leafPositions[selectedIndex].origin = newOrigin;
+            leafPositions[selectedIndex].swingAngle = newAngle;
+
+            // Update UI
+            document.getElementById('angle-val').innerText = amt + '°';
+
+            // Update DOM element
+            const leafElement = document.getElementById('leaf-' + selectedIndex);
+            leafElement.style.setProperty('--origin', newOrigin);
+            leafElement.style.setProperty('--swing', `${newAngle}deg`);
+        }
+
+        function testAnimation() {
+            if (selectedIndex === null) return;
+            
+            const leafElement = document.getElementById('leaf-' + selectedIndex);
+            
+            if (leafElement.classList.contains('moved')) {
+                leafElement.classList.remove('moved');
+            } else {
+                leafElement.classList.add('moved');
+                setTimeout(() => { leafElement.classList.remove('moved'); }, 2000);
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.target === canvas && selectedIndex !== null) {
+                document.getElementById('leaf-' + selectedIndex).classList.remove('selected');
+                selectedIndex = null;
+                document.getElementById('sel-origin').disabled = true;
+                document.getElementById('sel-dir').disabled = true;
+                document.getElementById('slide-amount').disabled = true;
+                document.getElementById('btn-test').disabled = true;
+            }
+        });
+
+        function exportConfig() {
+            const exportArea = document.getElementById('export-area');
+            const exportCode = document.getElementById('export-code');
+            
+            exportCode.value = "const leafPositions = [\n" + 
+                leafPositions.map(cfg => 
+                    `    { image: '${cfg.image}', top: '${cfg.top}', left: '${cfg.left}', size: '${cfg.size}', rotation: ${cfg.rotation}, flip: ${cfg.flip}, origin: '${cfg.origin}', swingAngle: ${cfg.swingAngle} }`
+                ).join(",\n") + 
+                "\n];";
+            
+            exportArea.style.display = 'block';
+        }
+
+        initBuilder();
+    </script>
+</body>
+</html>
